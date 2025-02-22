@@ -63,3 +63,11 @@ SDF:
 Molecules should be pre-aligned.
 The SDF file must contain a property field corresponding to the activity data.
 Use --sdf_activity to specify the property name.
+
+## Tests from publication
+
+To run the examples from the publication, simply execute the following:
+
+```bash
+python comsiatest.py
+```
