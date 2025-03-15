@@ -71,3 +71,10 @@ To run the examples from the publication, simply execute the following:
 ```bash
 python comsiatest.py
 ```
+## Molecule Imager
+
+Creates a png file of molecules in an SDF file with IUPAC names (if available).
+
+```bash
+python moleculeimager.py SDF_file_name.sdf
+```
