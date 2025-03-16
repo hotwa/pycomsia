@@ -1,5 +1,7 @@
 import numpy as np
 from rdkit import Chem
+from typing import List
+from rdkit.Chem.rdchem import Mol
 
 class MolecularGridCalculator:
     def __init__(self):
@@ -17,7 +19,7 @@ class MolecularGridCalculator:
         """
         return np.round(coords / grid_spacing) * grid_spacing
 
-    def generate_grid(self, aligned_results, resolution=1.0, padding=3):
+    def generate_grid(self, aligned_results: List[tuple[Mol, bool]], resolution=1.0, padding=3):
         """
         Generate grid parameters that encompass all aligned molecules.
         Args:
