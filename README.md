@@ -2,6 +2,14 @@
 
 `comsia.py` is a Python implementation of Comparative Molecular Similarity Indices Analysis (CoMSIA), a 3D Quantitative Structure-Activity Relationship (QSAR) method. This tool allows you to analyze molecular fields and predict biological activities based on molecular structures.
 
+## Citing Py-CoMSIA
+
+If you use Py-CoMSIA in your work, please cite our publication:
+
+Haga, C. L., Le, C. N., Yang, X. D., & Phinney, D. G. (2025). Py-CoMSIA: An Open-Source Implementation of Comparative Molecular Similarity Indices Analysis in Python. Pharmaceuticals, 18(3), 440. https://doi.org/10.3390/ph18030440
+
+https://www.mdpi.com/1424-8247/18/3/440
+
 ## Features
 
 * **CoMSIA Field Calculation:** Calculates steric, electrostatic, hydrophobic, hydrogen bond donor, and hydrogen bond acceptor fields.
