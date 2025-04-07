@@ -1,17 +1,26 @@
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdFMCS, rdDistGeom
 from rdkit.Chem.rdForceFieldHelpers import MMFFGetMoleculeProperties, MMFFGetMoleculeForceField
+from typing import List, Tuple, Optional, Union
 
 class MoleculeAligner:
     def __init__(self):
         self.template = None
         self.core = None
 
-    def align_molecules(self, train_smiles_list, pred_smiles_list=None):
+    def align_molecules(self, train_smiles_list: List[str], pred_smiles_list: Optional[List[str]] = None) -> List[Tuple[Optional[Chem.Mol], bool]]:
         """
         Align molecules from both training and prediction sets to the largest molecule as template.
         pred_smiles_list is optional.
         Returns a list of tuples: (aligned_mol, is_training)
+        
+        Args:
+            train_smiles_list: List of SMILES strings for training set molecules
+            pred_smiles_list: Optional list of SMILES strings for prediction set molecules
+            
+        Returns:
+            List of tuples, each containing an aligned RDKit molecule (or None if alignment failed) 
+            and a boolean indicating if it's from the training set
         """
         if not train_smiles_list:
             return []
