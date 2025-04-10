@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional, Callable, Any
 from functools import cached_property
 from joblib import Parallel, delayed
+from .utils import SerializedMolecule
 
 @dataclass
 class GridNode:
@@ -149,13 +150,11 @@ class MolecularFieldCalculator:
         self.donor_patterns = [Chem.MolFromSmarts(smart) for smart in self.donor_smarts]
         self.acceptor_patterns = [Chem.MolFromSmarts(smart) for smart in self.acceptor_smarts]
 
-    def _process_mol(self, mol_binary, is_training, grid_spacing, grid_dimensions, grid_origin):
+    def _process_mol(self, mol_binary: SerializedMolecule, is_training, grid_spacing, grid_dimensions, grid_origin):
         """
         包装单个分子的场计算，返回 (fields, structured_fields, is_training)
         """
-        # 反序列化 Molecule 对象
-        mol = Chem.Mol(mol_binary)
-        fields, structured_fields = self._calc_single_molecule_field(mol, grid_spacing, grid_dimensions, grid_origin)
+        fields, structured_fields = self._calc_single_molecule_field(mol_binary, grid_spacing, grid_dimensions, grid_origin)
         return fields, structured_fields, is_training
         
     def calc_field(self, 
@@ -200,7 +199,7 @@ class MolecularFieldCalculator:
         # 并行处理所有分子
         results = Parallel(n_jobs=-1)(
         delayed(self._process_mol)(
-            mol.ToBinary(),  # 序列化分子为二进制字符串
+            SerializedMolecule.from_mol(mol),  # 序列化分子为二进制字符串
             is_training,
             grid_spacing,
             grid_dimensions,
@@ -246,7 +245,7 @@ class MolecularFieldCalculator:
         node.hbond_donor_value = hbond_donor_field[i, j, k]
         node.hbond_acceptor_value = hbond_acceptor_field[i, j, k]
         return node
-    def _calc_single_molecule_field(self, mol, grid_spacing, grid_dimensions, grid_origin):
+    def _calc_single_molecule_field(self, mol_binary: SerializedMolecule, grid_spacing, grid_dimensions, grid_origin):
         dx, dy, dz = grid_spacing
         nx, ny, nz = grid_dimensions
         x0, y0, z0 = grid_origin
@@ -264,8 +263,10 @@ class MolecularFieldCalculator:
                                 grid_spacing=grid_spacing, 
                                 grid_origin=grid_origin)
         
+        # 反序列化 Molecule 对象
+        mol = mol_binary.to_mol()
         # 从分子中获取 mol_id（属性名按实际情况调整，此处使用 _Name）
-        mol_id = mol.GetProp('_Name') if mol.HasProp('_Name') else f"unknown, {type(mol)}"
+        mol_id = mol.GetProp('_Name') if mol.HasProp('_Name') else f"unknown, {mol.GetPropsAsDict()}"
         comsia_field.mol_id = mol_id
         
         # 创建网格节点（仍然使用三重循环创建）
