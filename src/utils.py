@@ -1,6 +1,7 @@
 import pickle
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import json
 from rdkit import Chem
 
 @dataclass
@@ -14,8 +15,9 @@ class SerializedMolecule:
         name: 分子名称，对应分子属性 '_Name'，若不存在则使用默认值 "unknown"
     """
     binary: bytes
-    properties: Dict[str, Any] = field(default_factory=dict)
     name: str = "unknown"
+    properties: Dict[str, Any] = field(default_factory=dict)
+    
     
     @classmethod
     def from_mol(cls, mol: Chem.Mol) -> "SerializedMolecule":
@@ -55,6 +57,32 @@ class SerializedMolecule:
     
     def __repr__(self) -> str:
         return f"<SerializedMolecule name={self.name} properties={self.properties}>"
+    
+    def set_prop(self, key: str, value: Any):
+        """安全设置额外属性"""
+        self.extra_props[key] = value
+
+    def get_prop(self, key: str, default: Optional[Any] = None) -> Any:
+        """安全获取额外属性"""
+        return self.extra_props.get(key, default)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为字典（用于JSON/HDF5存储）"""
+        return {
+            "binary": self.binary,
+            "name": self.name,
+            "extra_props": json.dumps(self.extra_props)  # 字典转JSON字符串
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SerializedMolecule":
+        """从字典反序列化"""
+        extra_props = json.loads(data.get("extra_props", "{}"))
+        return cls(
+            binary=data["binary"],
+            name=data.get("name", "unknown"),
+            extra_props=extra_props
+        )
 
 
 if __name__ == '__main__':
