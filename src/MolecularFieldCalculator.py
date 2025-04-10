@@ -6,7 +6,34 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional, Callable, Any
 from functools import cached_property
 from joblib import Parallel, delayed
-from .utils import SerializedMolecule
+import h5py,pickle
+import json
+
+# 尝试多种方式导入SerializedMolecule
+try:
+    # 第一种尝试：直接从utils导入
+    from utils import SerializedMolecule
+except ImportError:
+    try:
+        # 第二种尝试：从当前目录下的utils模块导入
+        from .utils import SerializedMolecule
+    except ImportError:
+        try:
+            # 第三种尝试：从src.utils导入
+            from src.utils import SerializedMolecule
+        except ImportError:
+            try:
+                # 第四种尝试：从pycomsia.utils导入
+                from pycomsia.utils import SerializedMolecule
+            except ImportError as e:
+                raise ImportError(
+                    "无法导入SerializedMolecule。尝试了以下导入路径:\n"
+                    "1. from utils import SerializedMolecule\n"
+                    "2. from .utils import SerializedMolecule\n"
+                    "3. from src.utils import SerializedMolecule\n"
+                    "4. from pycomsia.utils import SerializedMolecule\n"
+                    f"最终错误: {str(e)}"
+                )
 
 @dataclass
 class GridNode:
@@ -54,17 +81,20 @@ class GridNode:
 @dataclass
 class MolecularField:
     """分子场的基类"""
+    serialized_mol: SerializedMolecule
+    mol_id: Optional[str] = None
     grid_nodes: List[GridNode] = field(default_factory=list)
     grid_dimensions: Tuple[int, int, int] = field(default_factory=tuple)
     grid_spacing: Tuple[float, float, float] = field(default_factory=tuple)
     grid_origin: Tuple[float, float, float] = field(default_factory=tuple)
-    mol_id: Optional[str] = None  # 新增属性，用于记录分子ID
-    
+
     def __repr__(self) -> str:
-        return (f"<{self.__class__.__name__} (mol_id={self.mol_id}, "
+        return (f"<MolecularField (mol_id={self.mol_id}, "
+                f"serialized_mol={self.serialized_mol}, "
                 f"grid_dimensions={self.grid_dimensions}, "
                 f"grid_spacing={self.grid_spacing}, "
                 f"grid_origin={self.grid_origin})>")
+    
     def to_numpy(self) -> np.ndarray:
         """将场数据转换为3D numpy数组"""
         if not self.grid_nodes or not self.grid_dimensions:
@@ -123,13 +153,164 @@ class MolecularField:
 @dataclass
 class CoMSIAField(MolecularField):
     def __repr__(self) -> str:
-        return (f"<CoMSIAField (mol_id={self.mol_id}, "
+        # 直接访问 molecule 的 serialized_mol 属性
+        return (f"<CoMSIAField (name={self.serialized_mol.name}, "
                 f"grid_dimensions={self.grid_dimensions}, "
                 f"grid_spacing={self.grid_spacing}, "
                 f"grid_origin={self.grid_origin})>")
-
+    
     def get_value(self, node: GridNode) -> float:
         return node.steric_value
+
+    def save_to_pickle(self, filename: str):
+        """保存整个 CoMSIAField 对象到 pickle 文件"""
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"CoMSIAField 已保存到 {filename}")
+
+    @classmethod
+    def load_from_pickle(cls, filename: str) -> "CoMSIAField":
+        """通过 pickle 从文件中加载 CoMSIAField 对象"""
+        with open(filename, 'rb') as f:
+            obj = pickle.load(f)
+        print(f"CoMSIAField 已从 {filename} 加载")
+        return obj
+
+    @classmethod
+    def load_from_pickle(cls, filename: str) -> "CoMSIAField":
+        """通过 pickle 从文件中加载 CoMSIAField 对象"""
+        with open(filename, 'rb') as f:
+            obj = pickle.load(f)
+        print(f"CoMSIAField 已从 {filename} 加载")
+        return obj
+
+    def save_to_hdf5(self, filename: str):
+        """
+        使用 HDF5 格式保存 CoMSIAField 数据。
+        除了网格数据和各节点场值，还保存 serialized_mol 中的分子信息：
+            - 二进制信息 binary（使用 np.void 保存）
+            - properties（转换成 JSON 字符串）
+            - name（分子名称）
+        """
+        coords = []
+        steric_values = []
+        electrostatic_values = []
+        hydrophobic_values = []
+        hbond_donor_values = []
+        hbond_acceptor_values = []
+
+        for node in self.grid_nodes:
+            coords.append(node.center)
+            steric_values.append(node.steric_value)
+            electrostatic_values.append(node.electrostatic_value)
+            hydrophobic_values.append(node.hydrophobic_value)
+            hbond_donor_values.append(node.hbond_donor_value)
+            hbond_acceptor_values.append(node.hbond_acceptor_value)
+
+        coords = np.array(coords)
+        steric_values = np.array(steric_values)
+        electrostatic_values = np.array(electrostatic_values)
+        hydrophobic_values = np.array(hydrophobic_values)
+        hbond_donor_values = np.array(hbond_donor_values)
+        hbond_acceptor_values = np.array(hbond_acceptor_values)
+
+        with h5py.File(filename, 'w') as hf:
+            hf.create_dataset("grid_dimensions", data=np.array(self.grid_dimensions))
+            hf.create_dataset("grid_spacing", data=np.array(self.grid_spacing))
+            hf.create_dataset("grid_origin", data=np.array(self.grid_origin))
+            # 保存原有的 mol_id
+            hf.attrs["mol_id"] = self.mol_id if self.mol_id is not None else ""
+            # 保存 serialized_mol 里的内容
+            hf.attrs["serialized_mol_name"] = self.serialized_mol.name
+            hf.attrs["serialized_mol_binary"] = np.void(self.serialized_mol.binary)
+            hf.attrs["serialized_mol_properties"] = json.dumps(self.serialized_mol.properties)
+            hf.create_dataset("coords", data=coords)
+            hf.create_dataset("steric_values", data=steric_values)
+            hf.create_dataset("electrostatic_values", data=electrostatic_values)
+            hf.create_dataset("hydrophobic_values", data=hydrophobic_values)
+            hf.create_dataset("hbond_donor_values", data=hbond_donor_values)
+            hf.create_dataset("hbond_acceptor_values", data=hbond_acceptor_values)
+        print(f"CoMSIAField 数据已保存到 HDF5 文件: {filename}")
+
+    @classmethod
+    def load_from_hdf5(cls, filename: str) -> "CoMSIAField":
+        """
+        从 HDF5 文件中加载数据，并还原为 CoMSIAField 对象。
+        包括网格数据、各节点场值以及 serialized_mol 中保存的分子信息。
+        """
+        with h5py.File(filename, 'r') as hf:
+            grid_dimensions = tuple(hf["grid_dimensions"][()])
+            grid_spacing = tuple(hf["grid_spacing"][()])
+            grid_origin = tuple(hf["grid_origin"][()])
+            mol_id = hf.attrs.get("mol_id", "")
+            if isinstance(mol_id, bytes):
+                mol_id = mol_id.decode('utf-8')
+            if mol_id == "":
+                mol_id = None
+
+            serialized_mol_name = hf.attrs.get("serialized_mol_name", "")
+            if isinstance(serialized_mol_name, bytes):
+                serialized_mol_name = serialized_mol_name.decode('utf-8')
+            # 注意：这里 serialized_mol_name 为空时，我们不做特别处理，因为 serialized_mol 已为必填项
+            serialized_mol_binary_attr = hf.attrs.get("serialized_mol_binary", b"")
+            if isinstance(serialized_mol_binary_attr, (bytes, np.void)):
+                serialized_mol_binary = bytes(serialized_mol_binary_attr)
+            else:
+                serialized_mol_binary = b""
+
+            serialized_mol_properties_str = hf.attrs.get("serialized_mol_properties", "{}")
+            if isinstance(serialized_mol_properties_str, bytes):
+                serialized_mol_properties_str = serialized_mol_properties_str.decode('utf-8')
+            serialized_mol_properties = json.loads(serialized_mol_properties_str)
+
+            coords = hf["coords"][()]
+            steric_values = hf["steric_values"][()]
+            electrostatic_values = hf["electrostatic_values"][()]
+            hydrophobic_values = hf["hydrophobic_values"][()]
+            hbond_donor_values = hf["hbond_donor_values"][()]
+            hbond_acceptor_values = hf["hbond_acceptor_values"][()]
+
+        # 构造 serialized_mol 字典（必填项）
+        serialized_mol = SerializedMolecule(
+            binary=serialized_mol_binary,
+            name=serialized_mol_name,
+            properties=serialized_mol_properties
+        )
+
+        field_obj = cls(
+            grid_dimensions=grid_dimensions,
+            grid_spacing=grid_spacing,
+            grid_origin=grid_origin,
+            serialized_mol=serialized_mol  # 必传入
+        )
+        field_obj.mol_id = mol_id
+
+        field_obj.grid_nodes = []
+        nx, ny, nz = grid_dimensions
+        index = 0
+        total_nodes = nx * ny * nz
+        if total_nodes != len(coords):
+            print("警告: 读取的节点总数与 grid_dimensions 不匹配！")
+        for i in range(nx):
+            for j in range(ny):
+                for k in range(nz):
+                    if index < len(coords):
+                        node = GridNode(
+                            i=i,
+                            j=j,
+                            k=k,
+                            grid_origin=grid_origin,
+                            grid_spacing=grid_spacing,
+                            steric_value=float(steric_values[index]),
+                            electrostatic_value=float(electrostatic_values[index]),
+                            hydrophobic_value=float(hydrophobic_values[index]),
+                            hbond_donor_value=float(hbond_donor_values[index]),
+                            hbond_acceptor_value=float(hbond_acceptor_values[index])
+                        )
+                        field_obj.grid_nodes.append(node)
+                        index += 1
+        print(f"CoMSIAField 已从 HDF5 文件 {filename} 加载")
+        return field_obj
 
 class MolecularFieldCalculator:
     def __init__(self):
@@ -257,17 +438,17 @@ class MolecularFieldCalculator:
         hbond_donor_field = np.zeros((nx, ny, nz))
         hbond_acceptor_field = np.zeros((nx, ny, nz))
         
+        # 反序列化 Molecule 对象
+        mol = mol_binary.to_mol()
+        # 从分子中获取 mol_id（属性名按实际情况调整，此处使用 mol_id）
+        mol_id = mol.GetProp('mol_id') if mol.HasProp('mol_id') else f"unknown"
         
         # 初始化统一结构化场数据
         comsia_field = CoMSIAField(grid_dimensions=grid_dimensions, 
                                 grid_spacing=grid_spacing, 
-                                grid_origin=grid_origin)
-        
-        # 反序列化 Molecule 对象
-        mol = mol_binary.to_mol()
-        # 从分子中获取 mol_id（属性名按实际情况调整，此处使用 _Name）
-        mol_id = mol.GetProp('_Name') if mol.HasProp('_Name') else f"unknown, {mol.GetPropsAsDict()}"
-        comsia_field.mol_id = mol_id
+                                grid_origin=grid_origin,
+                                serialized_mol=mol_binary,
+                                mol_id=mol_id)
         
         # 创建网格节点（仍然使用三重循环创建）
         grid_nodes = []
